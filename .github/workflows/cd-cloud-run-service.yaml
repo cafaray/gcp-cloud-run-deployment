@@ -1,14 +1,29 @@
 name: Deploy Service to GCP Cloud Run
-run-name: "Deploy to Cloud Run questionnaires-service"
+run-name: "Deploy to Cloud Run ${{ inputs.service-name }}"
 
 on:
   workflow_dispatch:
     inputs:
-      image-name:
-        description: "Image name to deploy"
+      service-name:
+        type: string
+        description: "The name identifying the service in the Cloud Run console"
+        default: events-service
+      build-mode:
+        type: choice
+        description: "The build mode to use for the Docker image"
+        options:
+          - jvm
+          - native
+        default: native
+      github-service-repository:
         required: true
-        default: "europe-southwest1-docker.pkg.dev/phonic-altar-450817-q4/services/questionnaires-service:latest"
-
+        type: string
+        description: "The repository containing the source code for the service"
+      github-org:
+        required: true
+        type: string
+        description: "The GitHub organization containing the source code for the service"
+        
   workflow_call:
     inputs:
       project-id:
@@ -29,6 +44,14 @@ on:
         required: true
         description: "Image name to deploy"
         type: string
+      github-org:
+        required: true
+        type: string
+        description: "The GitHub organization containing the source code for the service"
+      github-service-repository:
+        required: true
+        type: string
+        description: "The repository containing the source code for the service"
     secrets:
       GCP_SA_KEY:
         required: true
@@ -36,7 +59,9 @@ on:
         required: true
       APIKEY_ANDROID:
         required: true
-
+      GITHUB_TOKEN:
+        required: true
+        description: "The token used to authenticate to the GitHub API"
 env:
   REGION: europe-southwest1
   REPOSITORY: services

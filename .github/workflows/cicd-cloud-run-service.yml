@@ -39,6 +39,8 @@ jobs:
       service-name: ${{ steps.buildDockerImage.outputs.service-name }}
       project-id: ${{ steps.buildDockerImage.outputs.project-id }}
       cloud-region: ${{ steps.buildDockerImage.outputs.cloud-region }}
+      service-repository: ${{ inputs.service-repository }}
+      github-org: ${{ env.GITHUB_ORG }}
     steps:
 
       
@@ -106,14 +108,15 @@ jobs:
           echo "project-id=${{ env.PROJECT_ID }}" >> $GITHUB_OUTPUT
           echo "service-name=${{ inputs.service-name }}" >> $GITHUB_OUTPUT
           echo "cloud-region=${{ env.REGION }}" >> $GITHUB_OUTPUT
-
+          echo "service-repository=${{ inputs.service-repository }}" >> $GITHUB_OUTPUT
+          echo "github-org=${{ env.GITHUB_ORG }}" >> $GITHUB_OUTPUT
       - name: Push to Artifact Registry
         run: docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
   deploy:
     name: Deploy to GCP Cloud Run
     needs: build
-    uses: ./.github/workflows/cd_questionnaires_service.yaml
+    uses: ./.github/workflows/cd-cloud-run-service.yaml
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
       APIKEY_IOS: ${{ secrets.APIKEY_IOS }}
@@ -123,3 +126,5 @@ jobs:
       project-id: ${{ needs.build.outputs.project-id }}
       service-name: ${{ needs.build.outputs.service-name }}
       cloud-region: ${{ needs.build.outputs.cloud-region }}
+      github-org: ${{ needs.build.outputs.github-org }}
+      github-service-repository: ${{ needs.build.outputs.service-repository }}
