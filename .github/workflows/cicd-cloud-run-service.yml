@@ -1,5 +1,5 @@
 name: Build and Push
-run-name: "Build & Push questionnaires-service"
+run-name: "Build & Push ${{ inputs.service-name }}"
 
 on:
   # push:
@@ -9,7 +9,7 @@ on:
       service-name:
         type: string
         description: "The name identifying the service in the Cloud Run console"
-        default: questionnaires-service
+        default: events-service
       build-mode:
         type: choice
         description: "The build mode to use for the Docker image"
@@ -17,6 +17,10 @@ on:
           - jvm
           - native
         default: native
+      service-repository:
+        type: string
+        description: "The repository containing the source code for the service"
+        
 env:
   PROJECT_ID: phonic-altar-450817-q4
   REGION: europe-southwest1
@@ -24,6 +28,7 @@ env:
   IMAGE_NAME: europe-southwest1-docker.pkg.dev/phonic-altar-450817-q4/services/${{ inputs.service-name }}
   SECRET_NAME: firebase-credentials
   FIREBASE_PROJECT_ID: phonic-altar-450817-q4
+  GITHUB_ORG: supporterApp
 
 jobs:
   build:
@@ -35,60 +40,75 @@ jobs:
       project-id: ${{ steps.buildDockerImage.outputs.project-id }}
       cloud-region: ${{ steps.buildDockerImage.outputs.cloud-region }}
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Authenticate to Google Cloud
-      uses: google-github-actions/auth@v2
-      with:
-        credentials_json: ${{ secrets.GCP_SA_KEY }}
-    
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
 
-    - name: Build and package
-      run: |
-        if [ "${{ inputs.build-mode }}" = "native" ]; then
-          mvn clean package \
-            -Dquarkus.native.enabled=true \
-            -Dquarkus.native.container-build=true \
+      
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ env.GITHUB_ORG }}
+          repositories: ${{ inputs.service-repository }}
+
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.GITHUB_ORG }}/${{ inputs.service-repository }}
+          token: ${{ steps.app-token.outputs.token }}
+          path: ./source
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Build and package
+        run: |
+          if [ "${{ inputs.build-mode }}" = "native" ]; then
+            mvn clean package \
+              -Dquarkus.native.enabled=true \
+              -Dquarkus.native.container-build=true \
             -Dquarkus.native.container-runtime-options=--platform=linux/amd64
-        else
-          mvn -B -f pom.xml clean package
-        fi
+          else
+            mvn -B -f pom.xml clean package
+          fi
 
-    - name: Set up Cloud SDK
-      uses: google-github-actions/setup-gcloud@v2
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
 
-    - name: Configure Docker for Artifact Registry
-      run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
 
-    - name: Build Docker image
-      id: buildDockerImage
-      run: |
-        if [ "${{ inputs.build-mode }}" = "native" ]; then
-          DOCKERFILE="src/main/docker/Dockerfile.native-micro"
-        else
-          DOCKERFILE="src/main/docker/Dockerfile.jvm"
-        fi
-        echo "dockerfile=$DOCKERFILE" >> $GITHUB_OUTPUT
-        docker build \
-          -f $DOCKERFILE \
-          --build-arg GOOGLE_PROJECT_ID="${{ env.PROJECT_ID }}" \
-          --build-arg SUPPORTERSAPP_IOS_APIKEY="${{ secrets.APIKEY_IOS }}" \
-          --build-arg SUPPORTERSAPP_ANDROID_APIKEY="${{ secrets.APIKEY_ANDROID }}" \
-          --platform=linux/amd64 \
-          -t ${{ env.IMAGE_NAME }}:${{ github.sha }} .
-        echo "image-name=${{ env.IMAGE_NAME }}:${{ github.sha }}" >> $GITHUB_OUTPUT
-        echo "project-id=${{ env.PROJECT_ID }}" >> $GITHUB_OUTPUT
-        echo "service-name=${{ inputs.service-name }}" >> $GITHUB_OUTPUT
-        echo "cloud-region=${{ env.REGION }}" >> $GITHUB_OUTPUT
+      - name: Build Docker image
+        id: buildDockerImage
+        run: |
+          if [ "${{ inputs.build-mode }}" = "native" ]; then
+            DOCKERFILE="src/main/docker/Dockerfile.native-micro"
+          else
+            DOCKERFILE="src/main/docker/Dockerfile.jvm"
+          fi
+          echo "dockerfile=$DOCKERFILE" >> $GITHUB_OUTPUT
+          docker build \
+            -f $DOCKERFILE \
+            --build-arg GOOGLE_PROJECT_ID="${{ env.PROJECT_ID }}" \
+            --build-arg SUPPORTERSAPP_IOS_APIKEY="${{ secrets.APIKEY_IOS }}" \
+            --build-arg SUPPORTERSAPP_ANDROID_APIKEY="${{ secrets.APIKEY_ANDROID }}" \
+            --platform=linux/amd64 \
+            -t ${{ env.IMAGE_NAME }}:${{ github.sha }} .
+          echo "image-name=${{ env.IMAGE_NAME }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "project-id=${{ env.PROJECT_ID }}" >> $GITHUB_OUTPUT
+          echo "service-name=${{ inputs.service-name }}" >> $GITHUB_OUTPUT
+          echo "cloud-region=${{ env.REGION }}" >> $GITHUB_OUTPUT
 
-    - name: Push to Artifact Registry
-      run: docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
+      - name: Push to Artifact Registry
+        run: docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
   deploy:
     name: Deploy to GCP Cloud Run

@@ -1,0 +1,3 @@
+# Git Ignore
+.env
+sa_gitaction2gcp.json
