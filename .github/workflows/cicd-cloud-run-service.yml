@@ -46,7 +46,7 @@ jobs:
       - name: Decode key
         id: key
         run: |
-          KEY=$(echo "${{ secrets.APP_PRIVATE_KEY_B64 }}" | base64 -d)
+          KEY=$(echo "${{ secrets.APP_PRIVATE_KEY }}" | base64 -d)
           echo "value<<EOF" >> $GITHUB_OUTPUT
           echo "$KEY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
