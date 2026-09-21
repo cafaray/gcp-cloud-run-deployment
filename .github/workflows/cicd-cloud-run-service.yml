@@ -98,6 +98,7 @@ jobs:
 
       - name: Build Docker image
         id: buildDockerImage
+        working-directory: ./source
         run: |
           if [ "${{ inputs.build-mode }}" = "native" ]; then
             DOCKERFILE="src/main/docker/Dockerfile.native-micro"
