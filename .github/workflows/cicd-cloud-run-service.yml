@@ -43,13 +43,20 @@ jobs:
       github-org: ${{ env.GITHUB_ORG }}      
     steps:
 
-      
+      - name: Decode key
+        id: key
+        run: |
+          KEY=$(echo "${{ secrets.APP_PRIVATE_KEY_B64 }}" | base64 -d)
+          echo "value<<EOF" >> $GITHUB_OUTPUT
+          echo "$KEY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Create GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          private-key: ${{ steps.key.outputs.value }}
           owner: ${{ env.GITHUB_ORG }}
           repositories: ${{ inputs.service-repository }}
 
