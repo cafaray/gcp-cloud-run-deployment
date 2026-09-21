@@ -1,0 +1,77 @@
+name: Deploy Service to GCP Cloud Run
+run-name: "Deploy to Cloud Run questionnaires-service"
+
+on:
+  workflow_dispatch:
+    inputs:
+      image-name:
+        description: "Image name to deploy"
+        required: true
+        default: "europe-southwest1-docker.pkg.dev/phonic-altar-450817-q4/services/questionnaires-service:latest"
+
+  workflow_call:
+    inputs:
+      project-id:
+        required: true
+        type: string
+        description: GCP Project Identification
+      service-name:
+        required: false
+        type: string
+        description: Name of the service
+        default: questionnaires-service
+      cloud-region:
+        required: false
+        type: string
+        description: Valid GCP Cloud Region
+        default: europe-southwest1
+      image-name:
+        required: true
+        description: "Image name to deploy"
+        type: string
+    secrets:
+      GCP_SA_KEY:
+        required: true
+      APIKEY_IOS:
+        required: true
+      APIKEY_ANDROID:
+        required: true
+
+env:
+  REGION: europe-southwest1
+  REPOSITORY: services
+  SECRET_NAME: firebase-credentials
+  FIREBASE_PROJECT_ID: phonic-altar-450817-q4
+
+jobs:
+  Deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Configure Docker for Artifact Registry
+      run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+    - name: Deploy to Cloud Run
+      run: |
+        echo "Deploying image ${{ inputs.image-name }} to Cloud Run service ${{ inputs.service-name }} in project ${{ inputs.project-id }} and region ${{ inputs.cloud-region }}"
+        gcloud run deploy ${{ inputs.service-name }} \
+          --image=${{ inputs.image-name }} \
+          --platform=managed \
+          --region=${{ inputs.cloud-region }} \
+          --allow-unauthenticated \
+          --port=8080 \
+          --memory=1Gi \
+          --cpu=1 \
+          --set-env-vars="SUPPORTERSAPP_IOS_APIKEY=${{ secrets.APIKEY_IOS }}" \
+          --set-env-vars="SUPPORTERSAPP_ANDROID_APIKEY=${{ secrets.APIKEY_ANDROID }}" \
+          --set-env-vars="GOOGLE_APPLICATION_CREDENTIALS=/app/firebase-key.json,FIREBASE_PROJECT_ID=${{ env.FIREBASE_PROJECT_ID }}" \
+          --update-secrets="/app/firebase-key.json=${{ env.SECRET_NAME }}:latest" \
+          --project=${{ inputs.project-id }}
