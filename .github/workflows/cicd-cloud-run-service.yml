@@ -40,8 +40,7 @@ jobs:
       project-id: ${{ steps.buildDockerImage.outputs.project-id }}
       cloud-region: ${{ steps.buildDockerImage.outputs.cloud-region }}
       service-repository: ${{ inputs.service-repository }}
-      github-org: ${{ env.GITHUB_ORG }}
-      github-token: ${{ steps.app-token.outputs.token }}
+      github-org: ${{ env.GITHUB_ORG }}      
     steps:
 
       
@@ -122,8 +121,7 @@ jobs:
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
       APIKEY_IOS: ${{ secrets.APIKEY_IOS }}
-      APIKEY_ANDROID: ${{ secrets.APIKEY_ANDROID }}
-      GITHUB_TOKEN: ${{ needs.build.outputs.github-token }}
+      APIKEY_ANDROID: ${{ secrets.APIKEY_ANDROID }}      
     with:
       image-name: ${{ needs.build.outputs.image-name }}
       project-id: ${{ needs.build.outputs.project-id }}
