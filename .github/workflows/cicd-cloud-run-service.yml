@@ -41,6 +41,7 @@ jobs:
       cloud-region: ${{ steps.buildDockerImage.outputs.cloud-region }}
       service-repository: ${{ inputs.service-repository }}
       github-org: ${{ env.GITHUB_ORG }}
+      github-token: ${{ steps.app-token.outputs.token }}
     steps:
 
       
@@ -110,6 +111,7 @@ jobs:
           echo "cloud-region=${{ env.REGION }}" >> $GITHUB_OUTPUT
           echo "service-repository=${{ inputs.service-repository }}" >> $GITHUB_OUTPUT
           echo "github-org=${{ env.GITHUB_ORG }}" >> $GITHUB_OUTPUT
+          echo "github-token=${{ steps.app-token.outputs.token }}" >> $GITHUB_OUTPUT
       - name: Push to Artifact Registry
         run: docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
@@ -121,6 +123,7 @@ jobs:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
       APIKEY_IOS: ${{ secrets.APIKEY_IOS }}
       APIKEY_ANDROID: ${{ secrets.APIKEY_ANDROID }}
+      GITHUB_TOKEN: ${{ needs.build.outputs.github-token }}
     with:
       image-name: ${{ needs.build.outputs.image-name }}
       project-id: ${{ needs.build.outputs.project-id }}
