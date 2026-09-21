@@ -79,6 +79,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Build and package
+        working-directory: ./source
         run: |
           if [ "${{ inputs.build-mode }}" = "native" ]; then
             mvn clean package \
