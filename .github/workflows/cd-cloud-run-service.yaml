@@ -59,9 +59,7 @@ on:
         required: true
       APIKEY_ANDROID:
         required: true
-      GITHUB_TOKEN:
-        required: true
-        description: "The token used to authenticate to the GitHub API"
+
 env:
   REGION: europe-southwest1
   REPOSITORY: services
