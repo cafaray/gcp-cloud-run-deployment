@@ -1,7 +1,6 @@
 # Git Ignore
-
-scripts
-
 .env
 sa_gitaction2gcp.json
 deploy-artifacts2cloud-run.2026-09-21.private-key.pem
+repomix-output.xml
+scripts
