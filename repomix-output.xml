@@ -3126,20 +3126,6 @@ curl -X POST http://localhost:8080/ \
   }'
 </file>
 
-<file path="scripts/venues-searchpos/mongodb-credentials.json">
-{
-  "client_id": "mdb_sa_id_698ad0530ac90e99f5a85d57",
-  "client_secret": "mdb_sa_sk_t5y02AHRUXheYlcW537OsJ9ABdrWX9lYx7pqqoYq"
-}
-</file>
-
-<file path="scripts/venues-searchpos/secret-creation.sh">
-PROJECT_ID="phonic-altar-450817-q4"
-SERVICE_ACCOUNT="343004725643-compute@developer.gserviceaccount.com"
-
-MONGODB_USER_SUPPORTERAPP="venue-seracher-go"
-MONGODB_PASSWORD_SUPPORTERAPP="LFC5yrqf985nIfRM"
-
 gcloud secrets create mongodb-supporters-uri \
   --replication-policy=automatic
 
