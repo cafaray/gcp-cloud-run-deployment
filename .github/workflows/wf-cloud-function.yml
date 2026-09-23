@@ -1,0 +1,220 @@
+name: "Reusable Workflow: Deploy Cloud Function Gen 2"
+
+on:
+  workflow_call:
+    inputs:
+      project_id:
+        description: "Google Cloud Project ID"
+        required: true
+        type: string
+      function_name:
+        description: "Name of the Cloud Function"
+        required: true
+        type: string
+      region:
+        description: "GCP deployment region"
+        required: false
+        type: string
+        default: "europe-west1"
+      runtime:
+        description: "Function runtime (e.g. nodejs22, python311)"
+        required: false
+        type: string
+        default: "nodejs22"
+      source_dir:
+        description: "Source directory containing function code"
+        required: false
+        type: string
+        default: "."
+      entry_point:
+        description: "Exported entrypoint function name"
+        required: false
+        type: string
+        default: ""
+      memory:
+        description: "Memory allocation (e.g. 256MB, 512MB)"
+        required: false
+        type: string
+        default: "256MB"
+      cpu:
+        description: "vCPU count"
+        required: false
+        type: string
+        default: "1"
+      timeout:
+        description: "Timeout duration (e.g. 60s, 540s)"
+        required: false
+        type: string
+        default: "60s"
+      trigger_topic:
+        description: "Pub/Sub topic to trigger the function"
+        required: false
+        type: string
+        default: ""
+      allow_unauthenticated:
+        description: "Allow unauthenticated invocations"
+        required: false
+        type: boolean
+        default: false
+      service_account:
+        description: "Runtime Service Account email"
+        required: false
+        type: string
+        default: ""
+      env_vars:
+        description: "Environment variables (multiline KEY=VALUE)"
+        required: false
+        type: string
+        default: ""
+      secrets:
+        description: "Secrets from Secret Manager (multiline ENV_VAR=SECRET_NAME:VERSION)"
+        required: false
+        type: string
+        default: ""
+      checkout_repository:
+        description: "External repository to checkout"
+        required: false
+        type: string
+        default: ""
+      checkout_ref:
+        description: "Git ref/branch to checkout"
+        required: false
+        type: string
+        default: ""
+      install_dependencies:
+        description: "Whether to run npm install in source_dir prior to deployment"
+        required: false
+        type: boolean
+        default: false
+      enable_eventarc:
+        description: "Whether to configure an Eventarc trigger for this function"
+        required: false
+        type: boolean
+        default: false
+      eventarc_trigger_name:
+        description: "Name of Eventarc trigger"
+        required: false
+        type: string
+        default: ""
+      eventarc_location:
+        description: "Eventarc location (e.g. eur3 or europe-west1)"
+        required: false
+        type: string
+        default: "eur3"
+      eventarc_filters:
+        description: "Comma-separated event filters"
+        required: false
+        type: string
+        default: "type=google.cloud.firestore.document.v1.updated,database=(default)"
+      eventarc_path_pattern:
+        description: "Path pattern for event filtering"
+        required: false
+        type: string
+        default: ""
+      eventarc_service_account:
+        description: "Service Account for Eventarc trigger"
+        required: false
+        type: string
+        default: ""
+    secrets:
+      GCP_SA_KEY:
+        required: false
+      WORKLOAD_IDENTITY_PROVIDER:
+        required: false
+      SERVICE_ACCOUNT:
+        required: false
+      APP_ID:
+        required: false
+      APP_PRIVATE_KEY:
+        required: false
+    outputs:
+      function_url:
+        description: "URL of deployed Cloud Function"
+        value: ${{ jobs.deploy-function.outputs.function_url }}
+
+jobs:
+  deploy-function:
+    runs-on: ubuntu-latest
+    outputs:
+      function_url: ${{ steps.deploy.outputs.function_url }}
+    steps:
+      - name: Authenticate GitHub App (if required)
+        if: ${{ inputs.checkout_repository != '' && secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '' }}
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ env.GITHUB_REPOSITORY_OWNER }}
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.checkout_repository != '' && inputs.checkout_repository || github.repository }}
+          ref: ${{ inputs.checkout_ref != '' && inputs.checkout_ref || github.ref }}
+          token: ${{ steps.app-token.outputs.token != '' && steps.app-token.outputs.token || github.token }}
+
+      - name: Checkout Deployment Actions (for external callers)
+        if: ${{ inputs.checkout_repository != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: cafaray/gcp-cloud-run-deployment
+          path: .deploy-actions-temp
+
+      - name: Sync Actions to Workspace (for external callers)
+        if: ${{ inputs.checkout_repository != '' }}
+        shell: bash
+        run: |
+          mkdir -p .github/actions
+          cp -r .deploy-actions-temp/.github/actions/* .github/actions/
+          rm -rf .deploy-actions-temp
+
+      - name: Authenticate to Google Cloud
+        uses: ./.github/actions/gcp-auth
+        with:
+          project_id: ${{ inputs.project_id }}
+          region: ${{ inputs.region }}
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      - name: Install Dependencies (Optional)
+        if: ${{ inputs.install_dependencies == true }}
+        shell: bash
+        run: |
+          cd "${{ inputs.source_dir }}"
+          if [ -f package.json ]; then
+            npm install --production --prefer-offline --no-audit
+          fi
+
+      - name: Deploy Cloud Function
+        id: deploy
+        uses: ./.github/actions/deploy-cloud-function
+        with:
+          function_name: ${{ inputs.function_name }}
+          source_dir: ${{ inputs.source_dir }}
+          entry_point: ${{ inputs.entry_point }}
+          runtime: ${{ inputs.runtime }}
+          project_id: ${{ inputs.project_id }}
+          region: ${{ inputs.region }}
+          memory: ${{ inputs.memory }}
+          cpu: ${{ inputs.cpu }}
+          timeout: ${{ inputs.timeout }}
+          trigger_topic: ${{ inputs.trigger_topic }}
+          allow_unauthenticated: ${{ inputs.allow_unauthenticated }}
+          service_account: ${{ inputs.service_account }}
+          env_vars: ${{ inputs.env_vars }}
+          secrets: ${{ inputs.secrets }}
+
+      - name: Configure Eventarc Trigger (Optional)
+        if: ${{ inputs.enable_eventarc == true && inputs.eventarc_trigger_name != '' }}
+        uses: ./.github/actions/setup-eventarc-trigger
+        with:
+          trigger_name: ${{ inputs.eventarc_trigger_name }}
+          project_id: ${{ inputs.project_id }}
+          location: ${{ inputs.eventarc_location }}
+          destination_run_service: ${{ inputs.function_name }}
+          destination_run_region: ${{ inputs.region }}
+          event_filters: ${{ inputs.eventarc_filters }}
+          event_filters_path_pattern: ${{ inputs.eventarc_path_pattern }}
+          service_account: ${{ inputs.eventarc_service_account }}

@@ -1,0 +1,157 @@
+name: "Deploy Cloud Function Gen 2"
+description: "Deploys a Google Cloud Function (2nd gen) with event triggers or HTTP endpoint, environment variables, and Secret Manager secrets"
+
+inputs:
+  function_name:
+    description: "Name of the Cloud Function"
+    required: true
+  source_dir:
+    description: "Directory containing function source code"
+    required: false
+    default: "."
+  entry_point:
+    description: "Name of the exported function / entrypoint (defaults to function_name)"
+    required: false
+    default: ""
+  runtime:
+    description: "Runtime environment (e.g. nodejs22, python311, go122)"
+    required: false
+    default: "nodejs22"
+  project_id:
+    description: "Google Cloud Project ID"
+    required: true
+  region:
+    description: "GCP Region for the Cloud Function (e.g. europe-west1)"
+    required: false
+    default: "europe-west1"
+  memory:
+    description: "Memory limit (e.g. 256MB, 512MB)"
+    required: false
+    default: "256MB"
+  cpu:
+    description: "vCPU count (e.g. 1, 2)"
+    required: false
+    default: "1"
+  timeout:
+    description: "Function execution timeout (e.g. 60s, 540s)"
+    required: false
+    default: "60s"
+  trigger_topic:
+    description: "Pub/Sub topic to trigger this function (leave empty for HTTP trigger)"
+    required: false
+    default: ""
+  allow_unauthenticated:
+    description: "Allow unauthenticated HTTP calls (only applies to HTTP triggers)"
+    required: false
+    default: "false"
+  service_account:
+    description: "Runtime Service Account email"
+    required: false
+    default: ""
+  env_vars:
+    description: "Multiline or comma-separated list of environment variables (KEY=VALUE)"
+    required: false
+    default: ""
+  secrets:
+    description: "Multiline or comma-separated list of secrets (ENV_VAR=SECRET_NAME:VERSION)"
+    required: false
+    default: ""
+
+outputs:
+  function_url:
+    description: "URL of the deployed Cloud Function (if HTTP triggered)"
+    value: "${{ steps.deploy-fn.outputs.function_url }}"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Deploy Cloud Function
+      id: deploy-fn
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        echo "::group::Deploying Cloud Function: ${{ inputs.function_name }}"
+
+        ENTRYPOINT="${{ inputs.entry_point }}"
+        if [ -z "$ENTRYPOINT" ]; then
+          ENTRYPOINT="${{ inputs.function_name }}"
+        fi
+
+        DEPLOY_ARGS=(
+          functions deploy "${{ inputs.function_name }}"
+          --gen2
+          --runtime="${{ inputs.runtime }}"
+          --source="${{ inputs.source_dir }}"
+          --entry-point="$ENTRYPOINT"
+          --region="${{ inputs.region }}"
+          --project="${{ inputs.project_id }}"
+          --memory="${{ inputs.memory }}"
+          --cpu="${{ inputs.cpu }}"
+          --timeout="${{ inputs.timeout }}"
+        )
+
+        if [ -n "${{ inputs.trigger_topic }}" ]; then
+          DEPLOY_ARGS+=(--trigger-topic="${{ inputs.trigger_topic }}")
+        else
+          DEPLOY_ARGS+=(--trigger-http)
+          if [ "${{ inputs.allow_unauthenticated }}" = "true" ]; then
+            DEPLOY_ARGS+=(--allow-unauthenticated)
+          else
+            DEPLOY_ARGS+=(--no-allow-unauthenticated)
+          fi
+        fi
+
+        if [ -n "${{ inputs.service_account }}" ]; then
+          DEPLOY_ARGS+=(--service-account="${{ inputs.service_account }}")
+        fi
+
+        # Process environment variables
+        if [ -n "${{ inputs.env_vars }}" ]; then
+          ENV_LIST=""
+          while IFS= read -r line || [ -n "$line" ]; do
+            line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            [[ -z "$line" || "$line" =~ ^# ]] && continue
+            if [ -z "$ENV_LIST" ]; then
+              ENV_LIST="$line"
+            else
+              ENV_LIST="${ENV_LIST},${line}"
+            fi
+          done <<< "${{ inputs.env_vars }}"
+
+          if [ -n "$ENV_LIST" ]; then
+            DEPLOY_ARGS+=(--set-env-vars="$ENV_LIST")
+          fi
+        fi
+
+        # Process secrets
+        if [ -n "${{ inputs.secrets }}" ]; then
+          SECRET_LIST=""
+          while IFS= read -r line || [ -n "$line" ]; do
+            line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            [[ -z "$line" || "$line" =~ ^# ]] && continue
+            if [ -z "$SECRET_LIST" ]; then
+              SECRET_LIST="$line"
+            else
+              SECRET_LIST="${SECRET_LIST},${line}"
+            fi
+          done <<< "${{ inputs.secrets }}"
+
+          if [ -n "$SECRET_LIST" ]; then
+            DEPLOY_ARGS+=(--set-secrets="$SECRET_LIST")
+          fi
+        fi
+
+        gcloud "${DEPLOY_ARGS[@]}"
+
+        FN_URL=""
+        if [ -z "${{ inputs.trigger_topic }}" ]; then
+          FN_URL=$(gcloud functions describe "${{ inputs.function_name }}" \
+            --region="${{ inputs.region }}" \
+            --project="${{ inputs.project_id }}" \
+            --format='value(serviceConfig.uri)' 2>/dev/null || echo "")
+        fi
+
+        echo "function_url=${FN_URL}" >> $GITHUB_OUTPUT
+        echo "Successfully deployed Cloud Function: ${{ inputs.function_name }}"
+        echo "::endgroup::"

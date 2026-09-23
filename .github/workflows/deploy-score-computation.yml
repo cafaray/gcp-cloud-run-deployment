@@ -1,0 +1,136 @@
+name: "Deploy: Score Computation (Jobs & Functions)"
+run-name: "Deploy Score Computation (${{ inputs.target || 'all' }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Components to deploy"
+        type: choice
+        options:
+          - all
+          - jobs-only
+          - functions-only
+        default: all
+      ref:
+        description: "Branch or commit SHA in supporterApp/score-computation to deploy"
+        required: false
+        default: "main"
+      skip_build:
+        description: "Skip build and deploy existing images"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  deploy-attendee-calculator-job:
+    if: ${{ inputs.target == 'all' || inputs.target == 'jobs-only' }}
+    uses: ./.github/workflows/wf-cloud-run-job.yml
+    with:
+      project_id: "phonic-altar-450817-q4"
+      region: "europe-west1"
+      repository: "services"
+      job_name: "attendee-score-calculator"
+      checkout_repository: "supporterApp/score-computation"
+      checkout_ref: ${{ inputs.ref || 'main' }}
+      context: "./cloud-run-job"
+      skip_build: ${{ inputs.skip_build || false }}
+      cpu: "1"
+      memory: "512Mi"
+      task_timeout: "10m"
+      max_retries: "3"
+      service_account: "phonic-altar-450817-q4@appspot.gserviceaccount.com"
+      env_vars: |
+        NODE_ENV=production
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  deploy-supporter-ranking-job:
+    if: ${{ inputs.target == 'all' || inputs.target == 'jobs-only' }}
+    uses: ./.github/workflows/wf-cloud-run-job.yml
+    with:
+      project_id: "phonic-altar-450817-q4"
+      region: "europe-west1"
+      repository: "services"
+      job_name: "supporter-ranking-calculator"
+      checkout_repository: "supporterApp/score-computation"
+      checkout_ref: ${{ inputs.ref || 'main' }}
+      context: "./supporter-ranking-job"
+      skip_build: ${{ inputs.skip_build || false }}
+      cpu: "2"
+      memory: "512Mi"
+      task_timeout: "10m"
+      max_retries: "3"
+      service_account: "phonic-altar-450817-q4@appspot.gserviceaccount.com"
+      env_vars: |
+        NODE_ENV=production
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  deploy-event-status-function:
+    if: ${{ inputs.target == 'all' || inputs.target == 'functions-only' }}
+    uses: ./.github/workflows/wf-cloud-function.yml
+    with:
+      project_id: "phonic-altar-450817-q4"
+      region: "europe-west1"
+      function_name: "onEventStatusChanged"
+      runtime: "nodejs22"
+      source_dir: "./functions"
+      checkout_repository: "supporterApp/score-computation"
+      checkout_ref: ${{ inputs.ref || 'main' }}
+      memory: "256MB"
+      cpu: "2"
+      timeout: "540s"
+      install_dependencies: true
+      enable_eventarc: true
+      eventarc_trigger_name: "firestore-event-pipeline-trigger"
+      eventarc_location: "eur3"
+      eventarc_filters: "type=google.cloud.firestore.document.v1.updated,database=(default)"
+      eventarc_path_pattern: "document=event_*/{docId}"
+      eventarc_service_account: "343004725643-compute@developer.gserviceaccount.com"
+      env_vars: |
+        GCP_PROJECT=phonic-altar-450817-q4
+        FUNCTION_REGION=europe-west1
+        SUMMARY_BUCKET_NAME=firestore-event-score-summaries
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  deploy-attendee-updates-function:
+    if: ${{ inputs.target == 'all' || inputs.target == 'functions-only' }}
+    uses: ./.github/workflows/wf-cloud-function.yml
+    with:
+      project_id: "phonic-altar-450817-q4"
+      region: "europe-west1"
+      function_name: "onAttendeeUpdates"
+      runtime: "nodejs22"
+      source_dir: "./attendee-updates-function"
+      checkout_repository: "supporterApp/score-computation"
+      checkout_ref: ${{ inputs.ref || 'main' }}
+      memory: "256MB"
+      cpu: "1"
+      timeout: "60s"
+      install_dependencies: true
+      service_account: "phonic-altar-450817-q4@appspot.gserviceaccount.com"
+      enable_eventarc: true
+      eventarc_trigger_name: "attendee-updates-match-trigger"
+      eventarc_location: "eur3"
+      eventarc_filters: "type=google.cloud.firestore.document.v1.updated,database=(default)"
+      eventarc_service_account: "343004725643-compute@developer.gserviceaccount.com"
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}

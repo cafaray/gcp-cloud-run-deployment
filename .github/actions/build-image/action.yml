@@ -1,0 +1,66 @@
+name: "Build and Push Container Image"
+description: "Builds and pushes Docker container images to Artifact Registry using Docker Buildx and GitHub Actions layer caching"
+
+inputs:
+  image_name:
+    description: "Target repository image name (e.g. europe-southwest1-docker.pkg.dev/PROJECT_ID/REPO/IMAGE)"
+    required: true
+  image_tag:
+    description: "Image tag to apply (e.g. git SHA or semantic version)"
+    required: true
+  push_latest:
+    description: "Whether to also tag and push with 'latest'"
+    required: false
+    default: "true"
+  context:
+    description: "Docker build context directory"
+    required: false
+    default: "."
+  dockerfile:
+    description: "Path to Dockerfile"
+    required: false
+    default: "Dockerfile"
+  build_args:
+    description: "Newline or comma-separated list of build-time variables (KEY=VALUE)"
+    required: false
+    default: ""
+  platform:
+    description: "Target platform architecture"
+    required: false
+    default: "linux/amd64"
+
+outputs:
+  image_uri:
+    description: "Primary published image URI with tag"
+    value: "${{ inputs.image_name }}:${{ inputs.image_tag }}"
+  image_tag:
+    description: "Published image tag"
+    value: "${{ inputs.image_tag }}"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Determine Docker Tags
+      id: meta
+      shell: bash
+      run: |
+        TAGS="${{ inputs.image_name }}:${{ inputs.image_tag }}"
+        if [ "${{ inputs.push_latest }}" = "true" ]; then
+          TAGS="${TAGS},${{ inputs.image_name }}:latest"
+        fi
+        echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+
+    - name: Build and Push Image
+      uses: docker/build-push-action@v5
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ inputs.dockerfile }}
+        platforms: ${{ inputs.platform }}
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        build-args: ${{ inputs.build_args }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max

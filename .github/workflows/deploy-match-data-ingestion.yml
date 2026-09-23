@@ -1,0 +1,202 @@
+name: "Deploy: Match Data Ingestion (Services & Jobs)"
+run-name: "Deploy Match Data Ingestion (${{ inputs.target || 'all' }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Select which components to deploy"
+        type: choice
+        options:
+          - all
+          - services-only
+          - jobs-only
+        default: all
+      ref:
+        description: "Branch or commit SHA in supporterApp/match-data-ingestion to deploy"
+        required: false
+        default: "main"
+      skip_build:
+        description: "Skip build and deploy existing image"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  deploy-ingestion-service:
+    if: ${{ inputs.target == 'all' || inputs.target == 'services-only' }}
+    uses: ./.github/workflows/wf-cloud-run-service.yml
+    with:
+      project_id: "phonic-altar-450817-q4"
+      region: "europe-southwest1"
+      repository: "services"
+      service_name: "match-data-ingestion"
+      checkout_repository: "supporterApp/match-data-ingestion"
+      checkout_ref: ${{ inputs.ref || 'main' }}
+      skip_build: ${{ inputs.skip_build || false }}
+      cpu: "1"
+      memory: "512Mi"
+      timeout: "600"
+      allow_unauthenticated: true
+      enable_scheduler: true
+      scheduler_job_name: "weekly-match-ingestion"
+      scheduler_cron: "50 21 * * *"
+      scheduler_location: "europe-west1"
+      scheduler_endpoint_path: "/ingest/weekly"
+      env_vars: |
+        APP_MODULE=src.main:app
+        FOOTBALL_API_BASE_URL=https://v3.football.api-sports.io
+        GCP_PROJECT_ID=phonic-altar-450817-q4
+        LEAGUES_TO_INGEST=143
+        SEASON_TO_INGEST=2025
+        DAYS_FORWARD=7
+        HTTP_TIMEOUT=30
+      secrets: |
+        FOOTBALL_API_KEY=API_FOOTBALL_KEY:latest
+        INTERNAL_API_KEY=internal-api-key:latest
+        GOOGLE_WEB_API_KEY=google-web-api-key:latest
+        AUTH_EMAIL=auth-email:latest
+        AUTH_PASSWORD=auth-password:latest
+        GOOGLE_MAPS_API_KEY=google-maps-api-key:latest
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  deploy-updater-service:
+    if: ${{ inputs.target == 'all' || inputs.target == 'services-only' }}
+    needs: [deploy-ingestion-service]
+    uses: ./.github/workflows/wf-cloud-run-service.yml
+    with:
+      project_id: "phonic-altar-450817-q4"
+      region: "europe-southwest1"
+      repository: "services"
+      service_name: "match-updater"
+      checkout_repository: "supporterApp/match-data-ingestion"
+      checkout_ref: ${{ inputs.ref || 'main' }}
+      # Reuse image built by ingestion service
+      skip_build: true
+      image_name: ${{ needs.deploy-ingestion-service.outputs.image_uri }}
+      image_tag: "latest"
+      cpu: "1"
+      memory: "512Mi"
+      timeout: "600"
+      allow_unauthenticated: true
+      enable_scheduler: true
+      scheduler_job_name: "daily-match-updater"
+      scheduler_cron: "1 1 * * *"
+      scheduler_location: "europe-west1"
+      scheduler_endpoint_path: "/update/all"
+      env_vars: |
+        APP_MODULE=src.status_updater.main:app
+        FOOTBALL_API_BASE_URL=https://v3.football.api-sports.io
+        GCP_PROJECT_ID=phonic-altar-450817-q4
+        LEAGUES_TO_INGEST=143
+        SEASON_TO_INGEST=2025
+        DAYS_FORWARD=7
+        HTTP_TIMEOUT=30
+      secrets: |
+        FOOTBALL_API_KEY=API_FOOTBALL_KEY:latest
+        INTERNAL_API_KEY=internal-api-key:latest
+        GOOGLE_WEB_API_KEY=google-web-api-key:latest
+        AUTH_EMAIL=auth-email:latest
+        AUTH_PASSWORD=auth-password:latest
+        GOOGLE_MAPS_API_KEY=google-maps-api-key:latest
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  deploy-ingestion-job:
+    if: ${{ inputs.target == 'all' || inputs.target == 'jobs-only' }}
+    uses: ./.github/workflows/wf-cloud-run-job.yml
+    with:
+      project_id: "phonic-altar-450817-q4"
+      region: "europe-southwest1"
+      repository: "services"
+      job_name: "match-data-ingestion-job"
+      checkout_repository: "supporterApp/match-data-ingestion"
+      checkout_ref: ${{ inputs.ref || 'main' }}
+      skip_build: ${{ inputs.skip_build || false }}
+      command: "uv"
+      args: "^|^run|python|-m|src.main"
+      cpu: "1"
+      memory: "512Mi"
+      task_timeout: "3600s"
+      max_retries: "1"
+      enable_scheduler: true
+      scheduler_job_name: "weekly-job-match-ingestion"
+      scheduler_cron: "55 21 * * 3"
+      scheduler_location: "europe-west1"
+      scheduler_oauth_service_account: "343004725643-compute@developer.gserviceaccount.com"
+      env_vars: |
+        FOOTBALL_API_BASE_URL=https://v3.football.api-sports.io
+        GCP_PROJECT_ID=phonic-altar-450817-q4
+        LEAGUES_TO_INGEST=143
+        SEASON_TO_INGEST=2025
+        DAYS_FORWARD=7
+        HTTP_TIMEOUT=30
+      secrets: |
+        FOOTBALL_API_KEY=API_FOOTBALL_KEY:latest
+        INTERNAL_API_KEY=internal-api-key:latest
+        GOOGLE_WEB_API_KEY=google-web-api-key:latest
+        AUTH_EMAIL=auth-email:latest
+        AUTH_PASSWORD=auth-password:latest
+        GOOGLE_MAPS_API_KEY=google-maps-api-key:latest
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  deploy-updater-job:
+    if: ${{ inputs.target == 'all' || inputs.target == 'jobs-only' }}
+    needs: [deploy-ingestion-job]
+    uses: ./.github/workflows/wf-cloud-run-job.yml
+    with:
+      project_id: "phonic-altar-450817-q4"
+      region: "europe-southwest1"
+      repository: "services"
+      job_name: "match-updater-job"
+      checkout_repository: "supporterApp/match-data-ingestion"
+      checkout_ref: ${{ inputs.ref || 'main' }}
+      # Reuse image
+      skip_build: true
+      image_name: ${{ needs.deploy-ingestion-job.outputs.image_uri }}
+      image_tag: "latest"
+      command: "uv"
+      args: "^|^run|python|-m|src.status_updater.main"
+      cpu: "1"
+      memory: "512Mi"
+      task_timeout: "3600s"
+      max_retries: "1"
+      enable_scheduler: true
+      scheduler_job_name: "daily-job-match-updater"
+      scheduler_cron: "1 1 * * *"
+      scheduler_location: "europe-west1"
+      scheduler_oauth_service_account: "343004725643-compute@developer.gserviceaccount.com"
+      env_vars: |
+        FOOTBALL_API_BASE_URL=https://v3.football.api-sports.io
+        GCP_PROJECT_ID=phonic-altar-450817-q4
+        LEAGUES_TO_INGEST=143
+        SEASON_TO_INGEST=2025
+        DAYS_FORWARD=7
+        HTTP_TIMEOUT=30
+      secrets: |
+        FOOTBALL_API_KEY=API_FOOTBALL_KEY:latest
+        INTERNAL_API_KEY=internal-api-key:latest
+        GOOGLE_WEB_API_KEY=google-web-api-key:latest
+        AUTH_EMAIL=auth-email:latest
+        AUTH_PASSWORD=auth-password:latest
+        GOOGLE_MAPS_API_KEY=google-maps-api-key:latest
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}

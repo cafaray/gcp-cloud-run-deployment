@@ -1,0 +1,52 @@
+name: "Deploy: Query Injector Service"
+run-name: "Deploy Query Injector (${{ inputs.ref || github.ref_name }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or commit SHA in supporterApp/query-injector to deploy"
+        required: false
+        default: "main"
+      skip_build:
+        description: "Skip build and deploy existing image"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  deploy-query-injector:
+    uses: ./.github/workflows/wf-cloud-run-service.yml
+    with:
+      project_id: "phonic-altar-450817-q4"
+      region: "europe-southwest1"
+      repository: "services"
+      service_name: "query-injector"
+      checkout_repository: "supporterApp/query-injector"
+      checkout_ref: ${{ inputs.ref || 'main' }}
+      skip_build: ${{ inputs.skip_build || false }}
+      port: "8080"
+      cpu: "1"
+      memory: "512Mi"
+      timeout: "300"
+      min_instances: "0"
+      max_instances: "10"
+      allow_unauthenticated: true
+      service_account: "343004725643-compute@developer.gserviceaccount.com"
+      env_vars: |
+        GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/models
+        QUESTIONNAIRES_SERVICE=https://questionnaires-service-343004725643.europe-southwest1.run.app/
+        FLASK_ENV=production
+        PYTHONUNBUFFERED=1
+        FIREBASE_CHECK_REVOKED=false
+        FIREBASE_PROJECT_ID=phonic-altar-450817-q4
+      secrets: |
+        GEMINI_API_KEY=gemini-api-key:latest
+        INTERNAL_API_KEY=internal-api-key:latest
+        API_KEY=internal-api-key:latest
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}

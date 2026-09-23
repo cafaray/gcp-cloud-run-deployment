@@ -1,0 +1,44 @@
+name: "Deploy: Venues Searchpos Service"
+run-name: "Deploy Venues Searchpos (${{ inputs.ref || github.ref_name }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or commit SHA in supporterApp/venues-searchpos to deploy"
+        required: false
+        default: "main"
+      skip_build:
+        description: "Skip build and deploy existing image"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  deploy-venues:
+    uses: ./.github/workflows/wf-cloud-run-service.yml
+    with:
+      project_id: "phonic-altar-450817-q4"
+      region: "europe-southwest1"
+      repository: "services"
+      service_name: "venues-searchpos"
+      checkout_repository: "supporterApp/venues-searchpos"
+      checkout_ref: ${{ inputs.ref || 'main' }}
+      skip_build: ${{ inputs.skip_build || false }}
+      port: "8080"
+      cpu: "1"
+      memory: "512Mi"
+      allow_unauthenticated: true
+      execution_environment: "gen2"
+      service_account: "343004725643-compute@developer.gserviceaccount.com"
+      env_vars: |
+        FIREBASE_PROJECT_ID=phonic-altar-450817-q4
+        env=production
+      secrets: |
+        MONGO_URI=mongodb-supporters-uri:latest
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}

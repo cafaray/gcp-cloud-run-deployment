@@ -1,0 +1,111 @@
+name: "Setup Eventarc Trigger"
+description: "Idempotently creates or updates an Eventarc trigger for Firestore or custom Cloud Events"
+
+inputs:
+  trigger_name:
+    description: "Name of the Eventarc trigger"
+    required: true
+  project_id:
+    description: "Google Cloud Project ID"
+    required: true
+  location:
+    description: "Eventarc trigger location (e.g. eur3 or europe-west1)"
+    required: true
+  destination_run_service:
+    description: "Name of the target Cloud Run service or Cloud Function"
+    required: true
+  destination_run_region:
+    description: "Region of the destination Cloud Run service"
+    required: false
+    default: "europe-west1"
+  destination_run_path:
+    description: "HTTP path for destination"
+    required: false
+    default: "/"
+  event_filters:
+    description: "Comma-separated or newline-separated event filters (e.g. type=google.cloud.firestore.document.v1.updated)"
+    required: false
+    default: "type=google.cloud.firestore.document.v1.updated"
+  event_filters_path_pattern:
+    description: "Path pattern for event filtering (e.g. document=event_*/{docId})"
+    required: false
+    default: ""
+  event_data_content_type:
+    description: "Event payload data format (e.g. application/protobuf or application/json)"
+    required: false
+    default: "application/protobuf"
+  service_account:
+    description: "Service Account for trigger invocation"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Configure Eventarc Trigger
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        echo "::group::Configuring Eventarc Trigger: ${{ inputs.trigger_name }}"
+
+        EXISTS=false
+        if gcloud eventarc triggers describe "${{ inputs.trigger_name }}" \
+          --location="${{ inputs.location }}" \
+          --project="${{ inputs.project_id }}" &>/dev/null; then
+          EXISTS=true
+        fi
+
+        if [ "$EXISTS" = true ]; then
+          echo "Eventarc trigger '${{ inputs.trigger_name }}' already exists. Updating..."
+          UPDATE_ARGS=(
+            eventarc triggers update "${{ inputs.trigger_name }}"
+            --location="${{ inputs.location }}"
+            --project="${{ inputs.project_id }}"
+            --destination-run-service="${{ inputs.destination_run_service }}"
+            --destination-run-region="${{ inputs.destination_run_region }}"
+            --destination-run-path="${{ inputs.destination_run_path }}"
+          )
+          if [ -n "${{ inputs.service_account }}" ]; then
+            UPDATE_ARGS+=(--service-account="${{ inputs.service_account }}")
+          fi
+          gcloud "${UPDATE_ARGS[@]}"
+        else
+          echo "Creating Eventarc trigger '${{ inputs.trigger_name }}'..."
+          CREATE_ARGS=(
+            eventarc triggers create "${{ inputs.trigger_name }}"
+            --location="${{ inputs.location }}"
+            --project="${{ inputs.project_id }}"
+            --destination-run-service="${{ inputs.destination_run_service }}"
+            --destination-run-region="${{ inputs.destination_run_region }}"
+            --destination-run-path="${{ inputs.destination_run_path }}"
+            --event-data-content-type="${{ inputs.event_data_content_type }}"
+          )
+
+          if [ -n "${{ inputs.service_account }}" ]; then
+            CREATE_ARGS+=(--service-account="${{ inputs.service_account }}")
+          fi
+
+          if [ -n "${{ inputs.event_filters_path_pattern }}" ]; then
+            CREATE_ARGS+=(--event-filters-path-pattern="${{ inputs.event_filters_path_pattern }}")
+          fi
+
+          # Process event filters
+          if [ -n "${{ inputs.event_filters }}" ]; then
+            while IFS= read -r line || [ -n "$line" ]; do
+              line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+              [[ -z "$line" || "$line" =~ ^# ]] && continue
+              # Can contain multiple comma-separated items per line
+              IFS=',' read -ra ADDR <<< "$line"
+              for filter_item in "${ADDR[@]}"; do
+                filter_item=$(echo "$filter_item" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                [ -n "$filter_item" ] && CREATE_ARGS+=(--event-filters="$filter_item")
+              done
+            done <<< "${{ inputs.event_filters }}"
+          fi
+
+          gcloud "${CREATE_ARGS[@]}"
+        fi
+
+        echo "Successfully configured Eventarc Trigger: ${{ inputs.trigger_name }}"
+        echo "::endgroup::"

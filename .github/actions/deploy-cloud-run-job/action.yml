@@ -1,0 +1,152 @@
+name: "Deploy Cloud Run Job"
+description: "Idempotently creates or updates a Google Cloud Run Job with command/args, resource limits, and secrets"
+
+inputs:
+  job_name:
+    description: "Name of the Cloud Run Job"
+    required: true
+  image:
+    description: "Full container image URI to deploy"
+    required: true
+  project_id:
+    description: "Google Cloud Project ID"
+    required: true
+  region:
+    description: "GCP Region (e.g. europe-southwest1 or europe-west1)"
+    required: false
+    default: "europe-southwest1"
+  cpu:
+    description: "Number of vCPUs"
+    required: false
+    default: "1"
+  memory:
+    description: "Memory limit"
+    required: false
+    default: "512Mi"
+  tasks:
+    description: "Number of tasks per job execution"
+    required: false
+    default: "1"
+  parallelism:
+    description: "Maximum number of concurrent tasks"
+    required: false
+    default: "1"
+  max_retries:
+    description: "Number of retries per task on failure"
+    required: false
+    default: "1"
+  task_timeout:
+    description: "Task timeout (e.g. 600s, 10m, 1h)"
+    required: false
+    default: "600s"
+  command:
+    description: "Optional entrypoint command override (e.g. uv, python, node)"
+    required: false
+    default: ""
+  args:
+    description: "Optional command arguments (pipe-separated '^|^arg1|arg2' or comma-separated)"
+    required: false
+    default: ""
+  service_account:
+    description: "Service Account to run the job as"
+    required: false
+    default: ""
+  env_vars:
+    description: "Multiline or comma-separated list of environment variables (KEY=VALUE)"
+    required: false
+    default: ""
+  secrets:
+    description: "Multiline or comma-separated list of secrets (ENV_VAR=SECRET_NAME:VERSION)"
+    required: false
+    default: ""
+
+outputs:
+  job_name:
+    description: "Name of the deployed Cloud Run Job"
+    value: "${{ inputs.job_name }}"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Deploy Cloud Run Job
+      id: deploy-job
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        echo "::group::Deploying Cloud Run Job: ${{ inputs.job_name }}"
+
+        # Determine if job exists
+        JOB_ACTION="create"
+        if gcloud run jobs describe "${{ inputs.job_name }}" --region="${{ inputs.region }}" --project="${{ inputs.project_id }}" &>/dev/null; then
+          JOB_ACTION="update"
+          echo "Job '${{ inputs.job_name }}' exists. Updating..."
+        else
+          echo "Job '${{ inputs.job_name }}' does not exist. Creating..."
+        fi
+
+        JOB_ARGS=(
+          run jobs "$JOB_ACTION" "${{ inputs.job_name }}"
+          --image="${{ inputs.image }}"
+          --project="${{ inputs.project_id }}"
+          --region="${{ inputs.region }}"
+          --tasks="${{ inputs.tasks }}"
+          --parallelism="${{ inputs.parallelism }}"
+          --max-retries="${{ inputs.max_retries }}"
+          --task-timeout="${{ inputs.task_timeout }}"
+          --cpu="${{ inputs.cpu }}"
+          --memory="${{ inputs.memory }}"
+        )
+
+        if [ -n "${{ inputs.service_account }}" ]; then
+          JOB_ARGS+=(--service-account="${{ inputs.service_account }}")
+        fi
+
+        if [ -n "${{ inputs.command }}" ]; then
+          JOB_ARGS+=(--command="${{ inputs.command }}")
+        fi
+
+        if [ -n "${{ inputs.args }}" ]; then
+          JOB_ARGS+=(--args="${{ inputs.args }}")
+        fi
+
+        # Process environment variables
+        if [ -n "${{ inputs.env_vars }}" ]; then
+          ENV_LIST=""
+          while IFS= read -r line || [ -n "$line" ]; do
+            line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            [[ -z "$line" || "$line" =~ ^# ]] && continue
+            if [ -z "$ENV_LIST" ]; then
+              ENV_LIST="$line"
+            else
+              ENV_LIST="${ENV_LIST},${line}"
+            fi
+          done <<< "${{ inputs.env_vars }}"
+
+          if [ -n "$ENV_LIST" ]; then
+            JOB_ARGS+=(--set-env-vars="$ENV_LIST")
+          fi
+        fi
+
+        # Process secrets
+        if [ -n "${{ inputs.secrets }}" ]; then
+          SECRET_LIST=""
+          while IFS= read -r line || [ -n "$line" ]; do
+            line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            [[ -z "$line" || "$line" =~ ^# ]] && continue
+            if [ -z "$SECRET_LIST" ]; then
+              SECRET_LIST="$line"
+            else
+              SECRET_LIST="${SECRET_LIST},${line}"
+            fi
+          done <<< "${{ inputs.secrets }}"
+
+          if [ -n "$SECRET_LIST" ]; then
+            JOB_ARGS+=(--set-secrets="$SECRET_LIST")
+          fi
+        fi
+
+        gcloud "${JOB_ARGS[@]}"
+
+        echo "Successfully deployed Cloud Run Job: ${{ inputs.job_name }}"
+        echo "::endgroup::"

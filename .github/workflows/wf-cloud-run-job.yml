@@ -1,0 +1,293 @@
+name: "Reusable Workflow: Deploy Cloud Run Job"
+
+on:
+  workflow_call:
+    inputs:
+      project_id:
+        description: "Google Cloud Project ID"
+        required: true
+        type: string
+      job_name:
+        description: "Name of the Cloud Run Job"
+        required: true
+        type: string
+      region:
+        description: "GCP deployment region"
+        required: false
+        type: string
+        default: "europe-southwest1"
+      repository:
+        description: "Artifact Registry repository name"
+        required: false
+        type: string
+        default: "services"
+      image_name:
+        description: "Custom image name in Artifact Registry"
+        required: false
+        type: string
+        default: ""
+      image_tag:
+        description: "Image tag to build/deploy (defaults to github.sha)"
+        required: false
+        type: string
+        default: ""
+      skip_build:
+        description: "Skip image build and deploy existing image"
+        required: false
+        type: boolean
+        default: false
+      context:
+        description: "Docker build context"
+        required: false
+        type: string
+        default: "."
+      dockerfile:
+        description: "Path to Dockerfile"
+        required: false
+        type: string
+        default: "Dockerfile"
+      build_args:
+        description: "Build arguments for Docker"
+        required: false
+        type: string
+        default: ""
+      command:
+        description: "Entrypoint command override (e.g. uv, python, node)"
+        required: false
+        type: string
+        default: ""
+      args:
+        description: "Execution arguments (e.g. '^|^run|python|-m|src.main')"
+        required: false
+        type: string
+        default: ""
+      cpu:
+        description: "vCPU count"
+        required: false
+        type: string
+        default: "1"
+      memory:
+        description: "Memory limit"
+        required: false
+        type: string
+        default: "512Mi"
+      tasks:
+        description: "Number of tasks per execution"
+        required: false
+        type: string
+        default: "1"
+      parallelism:
+        description: "Maximum concurrent tasks"
+        required: false
+        type: string
+        default: "1"
+      max_retries:
+        description: "Retries per failed task"
+        required: false
+        type: string
+        default: "1"
+      task_timeout:
+        description: "Task timeout (e.g. 600s, 10m)"
+        required: false
+        type: string
+        default: "600s"
+      service_account:
+        description: "Runtime Service Account email"
+        required: false
+        type: string
+        default: ""
+      env_vars:
+        description: "Environment variables (multiline KEY=VALUE)"
+        required: false
+        type: string
+        default: ""
+      secrets:
+        description: "Secrets from Secret Manager (multiline ENV_VAR=SECRET_NAME:VERSION)"
+        required: false
+        type: string
+        default: ""
+      checkout_repository:
+        description: "External repository to checkout"
+        required: false
+        type: string
+        default: ""
+      checkout_ref:
+        description: "Git ref/branch to checkout"
+        required: false
+        type: string
+        default: ""
+      enable_cloud_tasks:
+        description: "Whether to provision a companion Cloud Tasks queue"
+        required: false
+        type: boolean
+        default: false
+      cloud_tasks_queue_name:
+        description: "Cloud Tasks queue name"
+        required: false
+        type: string
+        default: ""
+      cloud_tasks_location:
+        description: "Cloud Tasks queue location"
+        required: false
+        type: string
+        default: "europe-west1"
+      enable_scheduler:
+        description: "Whether to configure a Cloud Scheduler job targeting this Run Job"
+        required: false
+        type: boolean
+        default: false
+      scheduler_job_name:
+        description: "Name for the Cloud Scheduler job"
+        required: false
+        type: string
+        default: ""
+      scheduler_cron:
+        description: "Cron schedule for Cloud Scheduler (e.g. '0 1 * * *')"
+        required: false
+        type: string
+        default: ""
+      scheduler_location:
+        description: "Cloud Scheduler location"
+        required: false
+        type: string
+        default: "europe-west1"
+      scheduler_oauth_service_account:
+        description: "Service account for OAuth token to trigger Run Job REST API"
+        required: false
+        type: string
+        default: ""
+    secrets:
+      GCP_SA_KEY:
+        required: false
+      WORKLOAD_IDENTITY_PROVIDER:
+        required: false
+      SERVICE_ACCOUNT:
+        required: false
+      APP_ID:
+        required: false
+      APP_PRIVATE_KEY:
+        required: false
+    outputs:
+      job_name:
+        description: "Name of deployed Cloud Run Job"
+        value: ${{ jobs.deploy-job.outputs.job_name }}
+      image_uri:
+        description: "Container image URI"
+        value: ${{ jobs.deploy-job.outputs.image_uri }}
+
+jobs:
+  deploy-job:
+    runs-on: ubuntu-latest
+    outputs:
+      job_name: ${{ steps.deploy.outputs.job_name }}
+      image_uri: ${{ steps.resolve-image.outputs.image_uri }}
+    steps:
+      - name: Authenticate GitHub App (if required)
+        if: ${{ inputs.checkout_repository != '' && secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '' }}
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ env.GITHUB_REPOSITORY_OWNER }}
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.checkout_repository != '' && inputs.checkout_repository || github.repository }}
+          ref: ${{ inputs.checkout_ref != '' && inputs.checkout_ref || github.ref }}
+          token: ${{ steps.app-token.outputs.token != '' && steps.app-token.outputs.token || github.token }}
+
+      - name: Checkout Deployment Actions (for external callers)
+        if: ${{ inputs.checkout_repository != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: cafaray/gcp-cloud-run-deployment
+          path: .deploy-actions-temp
+
+      - name: Sync Actions to Workspace (for external callers)
+        if: ${{ inputs.checkout_repository != '' }}
+        shell: bash
+        run: |
+          mkdir -p .github/actions
+          cp -r .deploy-actions-temp/.github/actions/* .github/actions/
+          rm -rf .deploy-actions-temp
+
+      - name: Authenticate to Google Cloud
+        uses: ./.github/actions/gcp-auth
+        with:
+          project_id: ${{ inputs.project_id }}
+          region: ${{ inputs.region }}
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      - name: Setup Cloud Tasks Queue (Optional)
+        if: ${{ inputs.enable_cloud_tasks == true && inputs.cloud_tasks_queue_name != '' }}
+        uses: ./.github/actions/setup-cloud-tasks
+        with:
+          queue_name: ${{ inputs.cloud_tasks_queue_name }}
+          location: ${{ inputs.cloud_tasks_location }}
+          project_id: ${{ inputs.project_id }}
+
+      - name: Resolve Image Name & Tag
+        id: resolve-image
+        shell: bash
+        run: |
+          IMG_NAME="${{ inputs.image_name }}"
+          if [ -z "$IMG_NAME" ]; then
+            IMG_NAME="${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/${{ inputs.repository }}/${{ inputs.job_name }}"
+          fi
+          
+          IMG_TAG="${{ inputs.image_tag }}"
+          if [ -z "$IMG_TAG" ]; then
+            IMG_TAG="${{ github.sha }}"
+          fi
+
+          echo "image_name=${IMG_NAME}" >> $GITHUB_OUTPUT
+          echo "image_tag=${IMG_TAG}" >> $GITHUB_OUTPUT
+          echo "image_uri=${IMG_NAME}:${IMG_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Build & Push Container Image
+        if: ${{ inputs.skip_build == false }}
+        uses: ./.github/actions/build-image
+        with:
+          image_name: ${{ steps.resolve-image.outputs.image_name }}
+          image_tag: ${{ steps.resolve-image.outputs.image_tag }}
+          context: ${{ inputs.context }}
+          dockerfile: ${{ inputs.dockerfile }}
+          build_args: ${{ inputs.build_args }}
+          push_latest: "true"
+
+      - name: Deploy Cloud Run Job
+        id: deploy
+        uses: ./.github/actions/deploy-cloud-run-job
+        with:
+          job_name: ${{ inputs.job_name }}
+          image: ${{ steps.resolve-image.outputs.image_uri }}
+          project_id: ${{ inputs.project_id }}
+          region: ${{ inputs.region }}
+          cpu: ${{ inputs.cpu }}
+          memory: ${{ inputs.memory }}
+          tasks: ${{ inputs.tasks }}
+          parallelism: ${{ inputs.parallelism }}
+          max_retries: ${{ inputs.max_retries }}
+          task_timeout: ${{ inputs.task_timeout }}
+          command: ${{ inputs.command }}
+          args: ${{ inputs.args }}
+          service_account: ${{ inputs.service_account }}
+          env_vars: ${{ inputs.env_vars }}
+          secrets: ${{ inputs.secrets }}
+
+      - name: Configure Cloud Scheduler (Optional)
+        if: ${{ inputs.enable_scheduler == true }}
+        uses: ./.github/actions/setup-cloud-scheduler
+        with:
+          scheduler_job_name: ${{ inputs.scheduler_job_name != '' && inputs.scheduler_job_name || format('{0}-scheduler', inputs.job_name) }}
+          schedule: ${{ inputs.scheduler_cron }}
+          project_id: ${{ inputs.project_id }}
+          location: ${{ inputs.scheduler_location }}
+          target_type: "cloud-run-job"
+          target_run_job_name: ${{ inputs.job_name }}
+          target_run_job_region: ${{ inputs.region }}
+          oauth_service_account_email: ${{ inputs.scheduler_oauth_service_account }}

@@ -1,0 +1,57 @@
+name: "Deploy: Post Match Events Job"
+run-name: "Deploy Post Match Events Job (${{ inputs.ref || github.ref_name }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or commit SHA in supporterApp/post-match-events to deploy"
+        required: false
+        default: "main"
+      skip_build:
+        description: "Skip build and deploy existing image"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  deploy-post-match-job:
+    uses: ./.github/workflows/wf-cloud-run-job.yml
+    with:
+      project_id: "phonic-altar-450817-q4"
+      region: "europe-west1"
+      repository: "services"
+      job_name: "post-match-events"
+      checkout_repository: "supporterApp/post-match-events"
+      checkout_ref: ${{ inputs.ref || 'main' }}
+      skip_build: ${{ inputs.skip_build || false }}
+      cpu: "1"
+      memory: "512Mi"
+      task_timeout: "10m"
+      max_retries: "3"
+      service_account: "phonic-altar-450817-q4@appspot.gserviceaccount.com"
+      enable_cloud_tasks: true
+      cloud_tasks_queue_name: "poll-close-tasks"
+      cloud_tasks_location: "europe-west1"
+      env_vars: |
+        NODE_ENV=production
+        ACTION=create_event_poll
+        BLOG_POST_OUTPUT_DIR=blog-posts
+        GEMINI_MODEL=gemini-2.0-flash
+        POLL_CLOSE_DELAY_SECONDS=86400
+        CLOUD_TASKS_QUEUE=poll-close-tasks
+        CLOUD_TASKS_LOCATION=europe-west1
+        PROJECT_ID=phonic-altar-450817-q4
+      secrets: |
+        FOOTBALL_API_KEY=API_FOOTBALL_KEY:latest
+        GEMINI_API_KEY=gemini-api-key:latest
+        SERVICES_API_KEY=internal-api-key:latest
+        FIREBASE_WEB_API_KEY=google-web-api-key:latest
+        ADMIN_EMAIL=auth-email:latest
+        ADMIN_PASSWORD=auth-password:latest
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}

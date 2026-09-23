@@ -1,0 +1,144 @@
+name: "Setup Cloud Scheduler"
+description: "Idempotently creates or updates a Google Cloud Scheduler job for HTTP endpoints or Cloud Run Job executions"
+
+inputs:
+  scheduler_job_name:
+    description: "Name of the Cloud Scheduler job"
+    required: true
+  schedule:
+    description: "Cron schedule expression in UTC (e.g. '0 1 * * *')"
+    required: true
+  project_id:
+    description: "Google Cloud Project ID"
+    required: true
+  location:
+    description: "Cloud Scheduler location (e.g. europe-west1)"
+    required: false
+    default: "europe-west1"
+  time_zone:
+    description: "Time zone for schedule"
+    required: false
+    default: "UTC"
+  target_type:
+    description: "Target type: 'http' (for Cloud Run Services) or 'cloud-run-job' (triggers Run Job execution)"
+    required: false
+    default: "http"
+  target_uri:
+    description: "HTTP target URI (required if target_type is 'http')"
+    required: false
+    default: ""
+  target_run_job_name:
+    description: "Target Cloud Run Job name (required if target_type is 'cloud-run-job')"
+    required: false
+    default: ""
+  target_run_job_region:
+    description: "Region where the Cloud Run Job is hosted"
+    required: false
+    default: "europe-southwest1"
+  http_method:
+    description: "HTTP method (POST, GET, PUT)"
+    required: false
+    default: "POST"
+  message_body:
+    description: "HTTP body payload"
+    required: false
+    default: "{}"
+  headers:
+    description: "HTTP headers in KEY=VALUE format (newline or comma-separated)"
+    required: false
+    default: ""
+  oauth_service_account_email:
+    description: "Service Account email for OAuth authorization header"
+    required: false
+    default: ""
+  oidc_service_account_email:
+    description: "Service Account email for OIDC authorization header"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Configure Cloud Scheduler Job
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        echo "::group::Configuring Cloud Scheduler: ${{ inputs.scheduler_job_name }}"
+
+        # Resolve URI based on target type
+        TARGET_URI="${{ inputs.target_uri }}"
+        if [ "${{ inputs.target_type }}" = "cloud-run-job" ]; then
+          if [ -z "${{ inputs.target_run_job_name }}" ]; then
+            echo "::error::target_run_job_name must be specified when target_type is 'cloud-run-job'"
+            exit 1
+          fi
+          TARGET_URI="https://${{ inputs.target_run_job_region }}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${{ inputs.project_id }}/jobs/${{ inputs.target_run_job_name }}:run"
+        elif [ -z "$TARGET_URI" ]; then
+          echo "::error::target_uri must be specified when target_type is 'http'"
+          exit 1
+        fi
+
+        # Check if job exists
+        EXISTS=false
+        if gcloud scheduler jobs describe "${{ inputs.scheduler_job_name }}" \
+          --location="${{ inputs.location }}" \
+          --project="${{ inputs.project_id }}" &>/dev/null; then
+          EXISTS=true
+        fi
+
+        SCHEDULER_CMD="create"
+        if [ "$EXISTS" = true ]; then
+          SCHEDULER_CMD="update"
+          echo "Scheduler job '${{ inputs.scheduler_job_name }}' exists. Updating..."
+        else
+          echo "Scheduler job '${{ inputs.scheduler_job_name }}' does not exist. Creating..."
+        fi
+
+        CMD_ARGS=(
+          scheduler jobs "$SCHEDULER_CMD" http "${{ inputs.scheduler_job_name }}"
+          --project="${{ inputs.project_id }}"
+          --location="${{ inputs.location }}"
+          --schedule="${{ inputs.schedule }}"
+          --time-zone="${{ inputs.time_zone }}"
+          --uri="$TARGET_URI"
+          --http-method="${{ inputs.http_method }}"
+        )
+
+        if [ -n "${{ inputs.message_body }}" ]; then
+          CMD_ARGS+=(--message-body="${{ inputs.message_body }}")
+        fi
+
+        # Process headers
+        if [ -n "${{ inputs.headers }}" ]; then
+          HEADER_LIST=""
+          while IFS= read -r line || [ -n "$line" ]; do
+            line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            [[ -z "$line" || "$line" =~ ^# ]] && continue
+            if [ -z "$HEADER_LIST" ]; then
+              HEADER_LIST="$line"
+            else
+              HEADER_LIST="${HEADER_LIST},${line}"
+            fi
+          done <<< "${{ inputs.headers }}"
+
+          if [ -n "$HEADER_LIST" ]; then
+            if [ "$EXISTS" = true ]; then
+              CMD_ARGS+=(--update-headers="$HEADER_LIST")
+            else
+              CMD_ARGS+=(--headers="$HEADER_LIST")
+            fi
+          fi
+        fi
+
+        # Authentication options
+        if [ -n "${{ inputs.oauth_service_account_email }}" ]; then
+          CMD_ARGS+=(--oauth-service-account-email="${{ inputs.oauth_service_account_email }}")
+        elif [ -n "${{ inputs.oidc_service_account_email }}" ]; then
+          CMD_ARGS+=(--oidc-service-account-email="${{ inputs.oidc_service_account_email }}")
+        fi
+
+        gcloud "${CMD_ARGS[@]}"
+
+        echo "Successfully configured Cloud Scheduler: ${{ inputs.scheduler_job_name }} (${TARGET_URI})"
+        echo "::endgroup::"

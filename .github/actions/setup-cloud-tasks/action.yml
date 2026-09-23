@@ -1,0 +1,38 @@
+name: "Setup Cloud Tasks Queue"
+description: "Idempotently creates a Google Cloud Tasks queue if it does not already exist"
+
+inputs:
+  queue_name:
+    description: "Name of the Cloud Tasks queue"
+    required: true
+  location:
+    description: "Cloud Tasks location (e.g. europe-west1)"
+    required: false
+    default: "europe-west1"
+  project_id:
+    description: "Google Cloud Project ID"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Ensure Cloud Tasks Queue
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        echo "::group::Configuring Cloud Tasks Queue: ${{ inputs.queue_name }}"
+
+        if gcloud tasks queues describe "${{ inputs.queue_name }}" \
+          --location="${{ inputs.location }}" \
+          --project="${{ inputs.project_id }}" &>/dev/null; then
+          echo "Cloud Tasks queue '${{ inputs.queue_name }}' already exists."
+        else
+          echo "Creating Cloud Tasks queue '${{ inputs.queue_name }}' in ${{ inputs.location }}..."
+          gcloud tasks queues create "${{ inputs.queue_name }}" \
+            --location="${{ inputs.location }}" \
+            --project="${{ inputs.project_id }}" \
+            --quiet
+          echo "Successfully created Cloud Tasks queue: ${{ inputs.queue_name }}"
+        fi
+        echo "::endgroup::"
