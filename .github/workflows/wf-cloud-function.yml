@@ -135,11 +135,14 @@ on:
 jobs:
   deploy-function:
     runs-on: ubuntu-latest
+    env:
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
     outputs:
       function_url: ${{ steps.deploy.outputs.function_url }}
     steps:
       - name: Authenticate GitHub App (if required)
-        if: ${{ inputs.checkout_repository != '' && secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '' }}
+        if: ${{ inputs.checkout_repository != '' && env.APP_ID != '' && env.APP_PRIVATE_KEY != '' }}
         id: app-token
         uses: actions/create-github-app-token@v1
         with:
