@@ -51,10 +51,6 @@ inputs:
     description: "Service Account email for OAuth authorization header"
     required: false
     default: ""
-  oidc_service_account_email:
-    description: "Service Account email for OIDC authorization header"
-    required: false
-    default: ""
 
 runs:
   using: "composite"
@@ -134,8 +130,6 @@ runs:
         # Authentication options
         if [ -n "${{ inputs.oauth_service_account_email }}" ]; then
           CMD_ARGS+=(--oauth-service-account-email="${{ inputs.oauth_service_account_email }}")
-        elif [ -n "${{ inputs.oidc_service_account_email }}" ]; then
-          CMD_ARGS+=(--oidc-service-account-email="${{ inputs.oidc_service_account_email }}")
         fi
 
         gcloud "${CMD_ARGS[@]}"

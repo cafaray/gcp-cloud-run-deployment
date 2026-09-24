@@ -118,11 +118,7 @@ on:
         default: ""
     secrets:
       GCP_SA_KEY:
-        required: false
-      WORKLOAD_IDENTITY_PROVIDER:
-        required: false
-      SERVICE_ACCOUNT:
-        required: false
+        required: true
       APP_ID:
         required: false
       APP_PRIVATE_KEY:
@@ -178,8 +174,6 @@ jobs:
           project_id: ${{ inputs.project_id }}
           region: ${{ inputs.region }}
           credentials_json: ${{ secrets.GCP_SA_KEY }}
-          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.SERVICE_ACCOUNT }}
 
       - name: Install Dependencies (Optional)
         if: ${{ inputs.install_dependencies == true }}
