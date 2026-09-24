@@ -51,7 +51,5 @@ jobs:
         ADMIN_PASSWORD=auth-password:latest
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
-      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}
       APP_ID: ${{ secrets.APP_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}

@@ -44,8 +44,6 @@ jobs:
         NODE_ENV=production
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
-      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}
       APP_ID: ${{ secrets.APP_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
@@ -70,8 +68,6 @@ jobs:
         NODE_ENV=production
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
-      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}
       APP_ID: ${{ secrets.APP_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
@@ -102,8 +98,6 @@ jobs:
         SUMMARY_BUCKET_NAME=firestore-event-score-summaries
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
-      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}
       APP_ID: ${{ secrets.APP_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
@@ -130,7 +124,5 @@ jobs:
       eventarc_service_account: "343004725643-compute@developer.gserviceaccount.com"
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
-      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT }}
       APP_ID: ${{ secrets.APP_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
