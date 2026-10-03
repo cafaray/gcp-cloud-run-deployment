@@ -29,6 +29,10 @@ on:
         type: string
         description: "The repository containing the source code for the service. Leave empty to use the service name as the repository name."
         required: false
+      branch:
+        type: string
+        description: "The branch to use for the service repository. Leave empty to use the default branch."
+        required: false
         
 env:
   PROJECT_ID: phonic-altar-450817-q4
@@ -49,6 +53,7 @@ jobs:
       project-id: ${{ steps.buildDockerImage.outputs.project-id }}
       cloud-region: ${{ steps.buildDockerImage.outputs.cloud-region }}
       service-repository: ${{ steps.repo.outputs.repo }}
+      branch: ${{ steps.repo.outputs.branch }}
       github-org: ${{ env.GITHUB_ORG }}      
     steps:
       - name: Resolve repository
@@ -56,6 +61,7 @@ jobs:
         run: |
           REPO="${{ inputs.service-repository != '' && inputs.service-repository || inputs.service-name }}"
           echo "repo=$REPO" >> "$GITHUB_OUTPUT"
+          echo "branch=${{ inputs.branch || 'main' }}" >> "$GITHUB_OUTPUT"
 
       - name: Decode key
         id: key
@@ -153,3 +159,4 @@ jobs:
       cloud-region: ${{ needs.build.outputs.cloud-region }}
       github-org: ${{ needs.build.outputs.github-org }}
       github-service-repository: ${{ needs.build.outputs.service-repository }}
+      github-branch: ${{ needs.build.outputs.branch }}

@@ -23,6 +23,10 @@ on:
         required: true
         type: string
         description: "The GitHub organization containing the source code for the service"
+      github-branch:
+        required: false
+        type: string
+        description: "The branch to use for the service repository. Leave empty to use the default branch."
         
   workflow_call:
     inputs:
@@ -52,6 +56,10 @@ on:
         required: true
         type: string
         description: "The repository containing the source code for the service"
+      github-branch:
+        required: false
+        type: string
+        description: "The branch to use for the service repository. Leave empty to use the default branch."
     secrets:
       GCP_SA_KEY:
         required: true
