@@ -18,6 +18,7 @@ on:
             - leagues-service
             - songs-service
             - questionnaires-service
+            - attendee-score-service
       build-mode:
         type: choice
         description: "The build mode to use for the Docker image"
