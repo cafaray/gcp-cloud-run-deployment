@@ -19,6 +19,7 @@ on:
             - songs-service
             - questionnaires-service
             - attendee-score-service
+            - events-autogeneration
       build-mode:
         type: choice
         description: "The build mode to use for the Docker image"
@@ -85,8 +86,8 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4
         with:
-          repository: ${{ env.GITHUB_ORG }}/${{ steps.repo.outputs.repo }}
-          token: ${{ steps.app-token.outputs.token }}
+          repository: ${{ env.GITHUB_ORG }}/${{ steps.repo.outputs.repo }}@${{ steps.repo.outputs.branch }}
+          token: ${{ steps.app-token.outputs.token }}          
           path: ./source
 
       - name: Authenticate to Google Cloud
