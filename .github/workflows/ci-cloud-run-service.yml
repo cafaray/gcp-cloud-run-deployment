@@ -1,0 +1,148 @@
+name: Build & Push Service
+run-name: "Build & Push ${{ inputs.service-name }}"
+
+on:
+  # push:
+  #   branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      service-name:
+        type: choice
+        description: "The name identifying the service in the Cloud Run console"
+        default: events-service
+        options:
+            - events-service
+            - events-management-service
+            - teams-service
+            - venues-service
+            - leagues-service
+            - songs-service
+            - questionnaires-service
+            - attendee-score-service
+            - events-autogeneration
+      build-mode:
+        type: choice
+        description: "The build mode to use for the Docker image"
+        options:
+          - jvm
+          - native
+        default: native
+      service-repository:
+        type: string
+        description: "The repository containing the source code for the service. Leave empty to use the service name as the repository name."
+        required: false
+      branch:
+        type: string
+        description: "The branch to use for the service repository. Leave empty to use the default branch."
+        required: false
+        
+env:
+  PROJECT_ID: phonic-altar-450817-q4
+  REGION: europe-southwest1
+  REPOSITORY: services
+  IMAGE_NAME: europe-southwest1-docker.pkg.dev/phonic-altar-450817-q4/services/${{ inputs.service-name }}
+  SECRET_NAME: firebase-credentials
+  FIREBASE_PROJECT_ID: phonic-altar-450817-q4
+  GITHUB_ORG: supporterApp
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Build service
+    outputs:
+      image-name: ${{ steps.buildDockerImage.outputs.image-name }}
+      service-name: ${{ steps.buildDockerImage.outputs.service-name }}
+      project-id: ${{ steps.buildDockerImage.outputs.project-id }}
+      cloud-region: ${{ steps.buildDockerImage.outputs.cloud-region }}
+      service-repository: ${{ steps.repo.outputs.repo }}
+      branch: ${{ steps.repo.outputs.branch }}
+      github-org: ${{ env.GITHUB_ORG }}      
+    steps:
+      - name: Resolve repository
+        id: repo
+        run: |
+          REPO="${{ inputs.service-repository != '' && inputs.service-repository || inputs.service-name }}"
+          echo "repo=$REPO" >> "$GITHUB_OUTPUT"
+          echo "branch=${{ inputs.branch || 'main' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Decode key
+        id: key
+        run: |
+          KEY=$(echo "${{ secrets.APP_PRIVATE_KEY }}" | base64 -d)
+          echo "value<<EOF" >> $GITHUB_OUTPUT
+          echo "$KEY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          # private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          private-key: ${{ steps.key.outputs.value }}
+          owner: ${{ env.GITHUB_ORG }}
+          repositories: ${{ steps.repo.outputs.repo }}
+
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.GITHUB_ORG }}/${{ steps.repo.outputs.repo }}
+          ref: ${{ steps.repo.outputs.branch }}
+          token: ${{ steps.app-token.outputs.token }}          
+          path: ./source
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Build and package
+        working-directory: ./source
+        run: |
+          if [ "${{ inputs.build-mode }}" = "native" ]; then
+            mvn clean package \
+              -Dquarkus.native.enabled=true \
+              -Dquarkus.native.container-build=true \
+            -Dquarkus.native.container-runtime-options=--platform=linux/amd64
+          else
+            mvn -B -f pom.xml clean package
+          fi
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Build Docker image
+        id: buildDockerImage
+        working-directory: ./source
+        run: |
+          if [ "${{ inputs.build-mode }}" = "native" ]; then
+            DOCKERFILE="src/main/docker/Dockerfile.native-micro"
+          else
+            DOCKERFILE="src/main/docker/Dockerfile.jvm"
+          fi
+          echo "dockerfile=$DOCKERFILE" >> $GITHUB_OUTPUT
+          docker build \
+            -f $DOCKERFILE \
+            --build-arg GOOGLE_PROJECT_ID="${{ env.PROJECT_ID }}" \
+            --build-arg SUPPORTERSAPP_IOS_APIKEY="${{ secrets.APIKEY_IOS }}" \
+            --build-arg SUPPORTERSAPP_ANDROID_APIKEY="${{ secrets.APIKEY_ANDROID }}" \
+            --platform=linux/amd64 \
+            -t ${{ env.IMAGE_NAME }}:${{ github.sha }} .
+          echo "image-name=${{ env.IMAGE_NAME }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "project-id=${{ env.PROJECT_ID }}" >> $GITHUB_OUTPUT
+          echo "service-name=${{ inputs.service-name }}" >> $GITHUB_OUTPUT
+          echo "cloud-region=${{ env.REGION }}" >> $GITHUB_OUTPUT
+          echo "service-repository=${{ steps.repo.outputs.repo }}" >> $GITHUB_OUTPUT
+          echo "github-org=${{ env.GITHUB_ORG }}" >> $GITHUB_OUTPUT
+          echo "github-token=${{ steps.app-token.outputs.token }}" >> $GITHUB_OUTPUT
+      - name: Push to Artifact Registry
+        run: docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}

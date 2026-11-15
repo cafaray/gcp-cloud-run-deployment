@@ -1,5 +1,5 @@
-name: Build and Push
-run-name: "Build & Push ${{ inputs.service-name }}"
+name: Build, Push and Deploy Service
+run-name: "Build & Deploy ${{ inputs.service-name }}"
 
 on:
   # push:
